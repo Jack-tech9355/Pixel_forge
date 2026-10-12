@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Pixel art styled stylus & forge hammer -->
+    <!-- Purple Body -->
+    <path
+        android:fillColor="#8B5CF6"
+        android:pathData="M50,28h8v8h-8z M58,36h8v8h-8z M66,44h8v8h-8z M74,52h8v8h-8z M42,36h8v8h-8z M50,44h8v8h-8z M58,52h8v8h-8z M66,60h8v8h-8z" />
+    <!-- Cyan Highlights -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M58,28h8v8h-8z M66,36h8v8h-8z M74,44h8v8h-8z M82,52h8v8h-8z M42,28h8v8h-8z M50,36h8v8h-8z" />
+    <!-- Pixel Stylus Nib / Tip -->
+    <path
+        android:fillColor="#F5F7FF"
+        android:pathData="M34,44h8v8h-8z M26,52h8v8h-8z M26,60h8v8h-8z M34,68h8v8h-8z" />
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M26,68h8v8h-8z M18,76h8v8h-8z" />
+    <!-- Pixel sparkles -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M28,26h6v6h-6z M82,32h6v6h-6z M76,76h6v6h-6z M38,82h6v6h-6z" />
+</vector>
