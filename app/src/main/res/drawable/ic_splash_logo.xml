@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glowing Background Rounded Emblem -->
+    <path
+        android:fillColor="#11182A"
+        android:pathData="M24,14h60a10,10 0 0,1 10,10v60a10,10 0 0,1 -10,10h-60a10,10 0 0,1 -10,-10v-60a10,10 0 0,1 10,-10z" />
+    <path
+        android:fillColor="#8B5CF6"
+        android:pathData="M24,14h60a10,10 0 0,1 10,10v60a10,10 0 0,1 -10,10h-60a10,10 0 0,1 -10,-10v-60a10,10 0 0,1 10,-10z"
+        android:strokeColor="#22D3EE"
+        android:strokeWidth="1.5" />
+
+    <!-- Sharp Pixel Blade - Electric Cyan Edge & White Shine -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M72,26h6v6h-6z M66,32h6v6h-6z M60,38h6v6h-6z M54,44h6v6h-6z M48,50h6v6h-6z" />
+
+    <!-- Cyan Energy Aura -->
+    <path
+        android:fillColor="#22D3EE"
+        android:pathData="M78,26h6v6h-6z M72,32h6v6h-6z M66,38h6v6h-6z M60,44h6v6h-6z M54,50h6v6h-6z M66,26h6v6h-6z M60,32h6v6h-6z M54,38h6v6h-6z M48,44h6v6h-6z M42,50h6v6h-6z" />
+
+    <!-- Deep Purple Blade Body -->
+    <path
+        android:fillColor="#8B5CF6"
+        android:pathData="M60,26h6v6h-6z M54,32h6v6h-6z M48,38h6v6h-6z M42,44h6v6h-6z M36,50h6v6h-6z M36,56h6v6h-6z M42,56h6v6h-6z" />
+
+    <!-- Golden Crossguard -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M30,50h8v8h-8z M44,64h8v8h-8z M36,58h8v8h-8z M26,44h6v6h-6z M50,68h6v6h-6z" />
+
+    <!-- Grip & Pommel -->
+    <path
+        android:fillColor="#A5B4CF"
+        android:pathData="M30,64h6v6h-6z M24,70h6v6h-6z" />
+    <path
+        android:fillColor="#F43F5E"
+        android:pathData="M18,76h8v8h-8z" />
+</vector>

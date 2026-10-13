@@ -379,6 +379,7 @@ private fun EditorTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(ForgeSurface)
+            .statusBarsPadding()
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -544,6 +545,7 @@ private fun EditorBottomPanel(
             .fillMaxWidth()
             .background(ForgeSurface)
             .border(width = 1.dp, color = Color(0xFF1E293B))
+            .navigationBarsPadding()
             .padding(vertical = 8.dp)
     ) {
         // 1. Tool carousel with clear visual indicators

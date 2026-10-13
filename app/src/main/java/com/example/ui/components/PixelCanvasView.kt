@@ -1,15 +1,12 @@
 package com.example.ui.components
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -20,9 +17,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import com.example.drawing.BresenhamAlgorithms
 import com.example.drawing.PixelCanvasState
-import com.example.export.PngExporter
 import com.example.model.DrawingTool
 
 @Composable
@@ -47,23 +45,11 @@ fun PixelCanvasView(
         val baseCanvasDisplayHeight: Float
 
         if (containerAspect > canvasAspect) {
-            baseCanvasDisplayHeight = containerHeight * 0.85f
+            baseCanvasDisplayHeight = containerHeight * 0.88f
             baseCanvasDisplayWidth = baseCanvasDisplayHeight * canvasAspect
         } else {
-            baseCanvasDisplayWidth = containerWidth * 0.85f
+            baseCanvasDisplayWidth = containerWidth * 0.88f
             baseCanvasDisplayHeight = baseCanvasDisplayWidth / canvasAspect
-        }
-
-        // Render buffer bitmap
-        val compositedBitmap = remember(
-            state.width,
-            state.height,
-            state.layers.map { it.hashCode() },
-            state.activeLayer?.pixels?.hashCode(),
-            state.hasUnsavedChanges
-        ) {
-            state.syncBackToProject()
-            PngExporter.compositeToBitmap(state.project, includeBackground = true)
         }
 
         Canvas(
@@ -76,7 +62,6 @@ fun PixelCanvasView(
                             state.panOffset += pan
                         }
                     } else {
-                        // Drawing gestures with coordinate transformation
                         detectDragGestures(
                             onDragStart = { offset ->
                                 val gridPoint = screenToGrid(
@@ -119,13 +104,16 @@ fun PixelCanvasView(
                     }
                 }
         ) {
+            // Read version counter to trigger canvas redraw phase only (hardware accelerated, zero GC)
+            val version = state.renderVersion
+
             val currentDisplayW = baseCanvasDisplayWidth * state.zoom
             val currentDisplayH = baseCanvasDisplayHeight * state.zoom
 
             val canvasLeft = (containerWidth - currentDisplayW) / 2f + state.panOffset.x
             val canvasTop = (containerHeight - currentDisplayH) / 2f + state.panOffset.y
 
-            // 1. Draw Checkerboard pattern behind canvas
+            // 1. Draw Checkerboard background for transparent areas
             drawCheckerboard(
                 topLeft = Offset(canvasLeft, canvasTop),
                 size = Size(currentDisplayW, currentDisplayH),
@@ -133,15 +121,15 @@ fun PixelCanvasView(
                 gridRows = state.height
             )
 
-            // 2. Draw crisp pixel bitmap with FilterQuality.None
+            // 2. Draw cached hardware render bitmap with crisp nearest-neighbor FilterQuality.None
             drawImage(
-                image = compositedBitmap.asImageBitmap(),
-                dstOffset = androidx.compose.ui.unit.IntOffset(canvasLeft.toInt(), canvasTop.toInt()),
-                dstSize = androidx.compose.ui.unit.IntSize(currentDisplayW.toInt(), currentDisplayH.toInt()),
+                image = state.renderBitmap.asImageBitmap(),
+                dstOffset = IntOffset(canvasLeft.toInt(), canvasTop.toInt()),
+                dstSize = IntSize(currentDisplayW.toInt(), currentDisplayH.toInt()),
                 filterQuality = FilterQuality.None
             )
 
-            // 3. Draw in-progress shape preview
+            // 3. Draw in-progress live shape preview without altering underlying pixels
             if (state.isDrawingShape && state.shapeStartPoint != null && state.shapeCurrentPoint != null) {
                 drawShapePreview(
                     state = state,
@@ -152,7 +140,7 @@ fun PixelCanvasView(
                 )
             }
 
-            // 4. Draw crisp grid lines if enabled and sufficiently zoomed in
+            // 4. Draw pixel grid lines when enabled
             if (state.isGridVisible && currentDisplayW >= 120f) {
                 drawGridLines(
                     topLeft = Offset(canvasLeft, canvasTop),
@@ -163,9 +151,9 @@ fun PixelCanvasView(
                 )
             }
 
-            // 5. Border around canvas
+            // 5. Crisp neon outline around artwork canvas
             drawRect(
-                color = Color(0xFF8B5CF6).copy(alpha = 0.5f),
+                color = Color(0xFF8B5CF6).copy(alpha = 0.6f),
                 topLeft = Offset(canvasLeft - 1f, canvasTop - 1f),
                 size = Size(currentDisplayW + 2f, currentDisplayH + 2f),
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)

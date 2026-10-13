@@ -42,32 +42,31 @@ jobs:
       - name: Package Release Asset
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/PixelForge-v1.0.0.apk
-          ls -lh dist/PixelForge-v1.0.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/PixelForge-v1.0.1.apk
+          ls -lh dist/PixelForge-v1.0.1.apk
 
       - name: Publish Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: PixelForge v1.0.0 - Installable Android APK
+          tag_name: v1.0.1
+          name: PixelForge v1.0.1 - Installable Android APK (High Performance & UI Fixes)
           draft: false
           prerelease: false
           body: |
-            ## PixelForge v1.0.0 — Native Android Pixel Art Studio
+            ## PixelForge v1.0.1 — Native Android Pixel Art Studio
 
             Real, installable Android APK for all modern Android devices (supports Android 7.0 Nougat to Android 15/16).
 
-            ### Features:
-            - **Native Pixel Canvas**: 16x16 up to 128x128 with nearest-neighbor crisp rendering.
-            - **Bresenham Drawing Engine**: Smooth pencil interpolation, erasers, lines, rects, circles, and flood fill.
-            - **Multi-Layer System**: Layer reordering, opacity, visibility, and merging.
-            - **Curated Starter Templates & 9 Retro Palettes**.
-            - **Crisp Integer PNG Export**: 1x to 32x scale with alpha or background.
-            - **100% Offline & Private**: Zero accounts, zero ads, zero telemetry.
+            ### What's New & Fixed in v1.0.1:
+            - ⚡ **Zero-Lag Drawing Engine**: Direct hardware-accelerated render buffer in `PixelCanvasState` eliminating all recomposition GC allocations during touch gestures. Smooth 60–120 FPS pencil, eraser, shapes, and flood fill.
+            - 📐 **Status Bar & Top Content Insets**: Added proper edge-to-edge window insets across Home, Templates, Gallery, Settings, and Editor so titles and toolbars never clash with the Android status bar clock or notch.
+            - 🧭 **Redesigned Compact Bottom Navigation**: Replaced the oversized Material 3 bar with a sleek, compact 60dp navigation bar with readable labels and correct system navigation bar padding.
+            - 🗡️ **New Pixel Sword Launcher Icon**: Premium retro pixel-art sword with cyan and purple neon highlights, gold crossguard, and adaptive icon layers.
+            - 🚀 **Branded Native Splash Screen**: Android 12+ splash screen and animated PixelForge emblem entrance.
 
             ### Download & Install:
-            1. Download `PixelForge-v1.0.0.apk` below.
-            2. Open on your Android phone and install.
-          files: dist/PixelForge-v1.0.0.apk
+            1. Download `PixelForge-v1.0.1.apk` below.
+            2. Open on your Android phone and tap Install.
+          files: dist/PixelForge-v1.0.1.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

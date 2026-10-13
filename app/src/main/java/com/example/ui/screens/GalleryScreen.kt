@@ -78,7 +78,8 @@ import java.util.Locale
 fun GalleryScreen(
     repository: ProjectRepository,
     onOpenProject: (String) -> Unit,
-    onCreateNewClick: () -> Unit
+    onCreateNewClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -106,6 +107,7 @@ fun GalleryScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onCreateNewClick,

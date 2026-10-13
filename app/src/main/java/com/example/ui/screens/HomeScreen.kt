@@ -76,7 +76,8 @@ fun HomeScreen(
     onCreateNewClick: () -> Unit,
     onOpenProjectClick: (String) -> Unit,
     onOpenTemplateClick: (TemplateItem) -> Unit,
-    onViewGalleryClick: () -> Unit
+    onViewGalleryClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val projects by repository.getAllProjectsFlow().collectAsState(initial = emptyList())
     var storageBytes by remember { mutableLongStateOf(0L) }
@@ -89,7 +90,7 @@ fun HomeScreen(
     val mostRecent = projects.firstOrNull()
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())

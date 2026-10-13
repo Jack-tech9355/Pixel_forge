@@ -140,6 +140,7 @@ class PixelForgeUnitTests {
 
         assertEquals(0xFF34D399.toInt(), state.activeLayer?.getPixel(2, 2, 16))
         assertEquals(0xFF34D399.toInt(), state.activeLayer?.getPixel(3, 2, 16))
+        assertEquals(0xFF34D399.toInt(), state.renderBitmap.getPixel(2, 2))
         assertTrue(state.canUndo)
 
         // Eraser tool

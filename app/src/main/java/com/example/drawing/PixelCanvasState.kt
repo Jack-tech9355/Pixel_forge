@@ -1,8 +1,11 @@
 package com.example.drawing
 
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -33,6 +36,13 @@ class PixelCanvasState(
     val history = PixelHistory(maxSteps = 40)
     var hasUnsavedChanges by mutableStateOf(false)
 
+    // Hardware-backed direct rendering bitmap & version counter
+    var renderBitmap: Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        private set
+    private val compositedPixels = IntArray(width * height)
+    var renderVersion by mutableLongStateOf(0L)
+        private set
+
     // Preview for shape tools (Line, Rect, Circle)
     var isDrawingShape by mutableStateOf(false)
     var shapeStartPoint by mutableStateOf<BresenhamAlgorithms.Point?>(null)
@@ -54,6 +64,122 @@ class PixelCanvasState(
         if (layers.isEmpty()) {
             layers.add(PixelLayer(name = "Layer 1", pixels = IntArray(width * height)))
         }
+        recompositeAll()
+    }
+
+    /**
+     * Recomposites all layers into the persistent render bitmap.
+     * Called on canvas init, layer changes, shape commits, and undo/redo.
+     */
+    fun recompositeAll() {
+        val total = width * height
+        if (compositedPixels.size != total) {
+            renderBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }
+
+        // Fill background
+        val bg = project.backgroundColor
+        if (bg != null) {
+            compositedPixels.fill(bg)
+        } else {
+            compositedPixels.fill(0)
+        }
+
+        // Composite layers bottom to top
+        for (layer in layers) {
+            if (!layer.isVisible || layer.opacity <= 0.001f) continue
+            val opacity = layer.opacity
+            for (i in 0 until minOf(total, layer.pixels.size)) {
+                val srcColor = layer.pixels[i]
+                val srcA = AndroidColor.alpha(srcColor)
+                if (srcA == 0) continue
+
+                val effectiveSrcA = (srcA * opacity).toInt().coerceIn(0, 255)
+                if (effectiveSrcA == 0) continue
+
+                val dstColor = compositedPixels[i]
+                val dstA = AndroidColor.alpha(dstColor)
+
+                if (dstA == 0 || effectiveSrcA == 255) {
+                    val r = AndroidColor.red(srcColor)
+                    val g = AndroidColor.green(srcColor)
+                    val b = AndroidColor.blue(srcColor)
+                    compositedPixels[i] = AndroidColor.argb(effectiveSrcA, r, g, b)
+                } else {
+                    val sa = effectiveSrcA / 255f
+                    val da = dstA / 255f
+                    val outA = sa + da * (1f - sa)
+
+                    val sr = AndroidColor.red(srcColor)
+                    val sg = AndroidColor.green(srcColor)
+                    val sb = AndroidColor.blue(srcColor)
+
+                    val dr = AndroidColor.red(dstColor)
+                    val dg = AndroidColor.green(dstColor)
+                    val db = AndroidColor.blue(dstColor)
+
+                    val outR = ((sr * sa + dr * da * (1f - sa)) / outA).toInt().coerceIn(0, 255)
+                    val outG = ((sg * sa + dg * da * (1f - sa)) / outA).toInt().coerceIn(0, 255)
+                    val outB = ((sb * sa + db * da * (1f - sa)) / outA).toInt().coerceIn(0, 255)
+                    val finalA = (outA * 255).toInt().coerceIn(0, 255)
+
+                    compositedPixels[i] = AndroidColor.argb(finalA, outR, outG, outB)
+                }
+            }
+        }
+
+        renderBitmap.setPixels(compositedPixels, 0, width, 0, 0, width, height)
+        renderVersion++
+    }
+
+    /**
+     * Fast in-place update of a single pixel in the render bitmap without allocating anything.
+     */
+    private fun updateRenderPixel(x: Int, y: Int) {
+        if (x !in 0 until width || y !in 0 until height) return
+        val index = y * width + x
+
+        // Re-blend just this pixel across layers
+        var pixelColor = project.backgroundColor ?: 0
+        for (layer in layers) {
+            if (!layer.isVisible || layer.opacity <= 0.001f) continue
+            val srcColor = layer.pixels[index]
+            val srcA = AndroidColor.alpha(srcColor)
+            if (srcA == 0) continue
+
+            val effectiveSrcA = (srcA * layer.opacity).toInt().coerceIn(0, 255)
+            if (effectiveSrcA == 0) continue
+
+            val dstA = AndroidColor.alpha(pixelColor)
+            if (dstA == 0 || effectiveSrcA == 255) {
+                val r = AndroidColor.red(srcColor)
+                val g = AndroidColor.green(srcColor)
+                val b = AndroidColor.blue(srcColor)
+                pixelColor = AndroidColor.argb(effectiveSrcA, r, g, b)
+            } else {
+                val sa = effectiveSrcA / 255f
+                val da = dstA / 255f
+                val outA = sa + da * (1f - sa)
+
+                val sr = AndroidColor.red(srcColor)
+                val sg = AndroidColor.green(srcColor)
+                val sb = AndroidColor.blue(srcColor)
+
+                val dr = AndroidColor.red(pixelColor)
+                val dg = AndroidColor.green(pixelColor)
+                val db = AndroidColor.blue(pixelColor)
+
+                val outR = ((sr * sa + dr * da * (1f - sa)) / outA).toInt().coerceIn(0, 255)
+                val outG = ((sg * sa + dg * da * (1f - sa)) / outA).toInt().coerceIn(0, 255)
+                val outB = ((sb * sa + db * da * (1f - sa)) / outA).toInt().coerceIn(0, 255)
+                val finalA = (outA * 255).toInt().coerceIn(0, 255)
+
+                pixelColor = AndroidColor.argb(finalA, outR, outG, outB)
+            }
+        }
+
+        compositedPixels[index] = pixelColor
+        renderBitmap.setPixel(x, y, pixelColor)
     }
 
     fun syncBackToProject() {
@@ -70,14 +196,13 @@ class PixelCanvasState(
         when (activeTool) {
             DrawingTool.PENCIL, DrawingTool.ERASER -> {
                 history.pushState(layers, activeLayerIndex, "Stroke")
-                hasUnsavedChanges = true
                 val drawColor = if (activeTool == DrawingTool.PENCIL) currentColor else 0
                 setPixelWithBrush(currentActive, gridX, gridY, drawColor)
                 lastStrokePoint = BresenhamAlgorithms.Point(gridX, gridY)
+                renderVersion++
             }
             DrawingTool.BUCKET -> {
                 history.pushState(layers, activeLayerIndex, "Bucket Fill")
-                hasUnsavedChanges = true
                 val targetColor = currentActive.getPixel(gridX, gridY, width)
                 if (targetColor != currentColor) {
                     BresenhamAlgorithms.floodFill(
@@ -89,6 +214,8 @@ class PixelCanvasState(
                         targetColor,
                         currentColor
                     )
+                    recompositeAll()
+                    hasUnsavedChanges = true
                 }
             }
             DrawingTool.EYEDROPPER -> {
@@ -126,7 +253,7 @@ class PixelCanvasState(
                     setPixelWithBrush(currentActive, clampedX, clampedY, drawColor)
                 }
                 lastStrokePoint = BresenhamAlgorithms.Point(clampedX, clampedY)
-                hasUnsavedChanges = true
+                renderVersion++
             }
             DrawingTool.EYEDROPPER -> {
                 if (gridX in 0 until width && gridY in 0 until height) {
@@ -164,13 +291,17 @@ class PixelCanvasState(
 
             if (pointsToDraw.isNotEmpty()) {
                 history.pushState(layers, activeLayerIndex, activeTool.title)
-                hasUnsavedChanges = true
                 for (pt in pointsToDraw) {
                     if (pt.x in 0 until width && pt.y in 0 until height) {
                         currentActive.setPixel(pt.x, pt.y, width, currentColor)
+                        updateRenderPixel(pt.x, pt.y)
                     }
                 }
+                renderVersion++
+                hasUnsavedChanges = true
             }
+        } else if (activeTool == DrawingTool.PENCIL || activeTool == DrawingTool.ERASER) {
+            hasUnsavedChanges = true
         }
 
         isDrawingShape = false
@@ -182,6 +313,7 @@ class PixelCanvasState(
     private fun setPixelWithBrush(layer: PixelLayer, cx: Int, cy: Int, color: Int) {
         if (brushSize <= 1) {
             layer.setPixel(cx, cy, width, color)
+            updateRenderPixel(cx, cy)
         } else {
             val radius = brushSize - 1
             for (dy in -radius..radius) {
@@ -190,6 +322,7 @@ class PixelCanvasState(
                     val py = cy + dy
                     if (px in 0 until width && py in 0 until height) {
                         layer.setPixel(px, py, width, color)
+                        updateRenderPixel(px, py)
                     }
                 }
             }
@@ -197,7 +330,6 @@ class PixelCanvasState(
     }
 
     private fun pickColorAt(x: Int, y: Int) {
-        // Sample composited pixel color from top to bottom
         for (i in layers.indices.reversed()) {
             val layer = layers[i]
             if (!layer.isVisible) continue
@@ -216,6 +348,7 @@ class PixelCanvasState(
         layers.clear()
         layers.addAll(snapshot.layers)
         activeLayerIndex = snapshot.activeLayerIndex.coerceIn(0, maxOf(0, layers.size - 1))
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -224,6 +357,7 @@ class PixelCanvasState(
         layers.clear()
         layers.addAll(snapshot.layers)
         activeLayerIndex = snapshot.activeLayerIndex.coerceIn(0, maxOf(0, layers.size - 1))
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -231,6 +365,7 @@ class PixelCanvasState(
         val active = activeLayer ?: return
         history.pushState(layers, activeLayerIndex, "Clear Layer")
         active.pixels.fill(0)
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -239,6 +374,7 @@ class PixelCanvasState(
         for (layer in layers) {
             layer.pixels.fill(0)
         }
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -251,6 +387,7 @@ class PixelCanvasState(
         )
         layers.add(newLayer)
         activeLayerIndex = layers.size - 1
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -260,6 +397,7 @@ class PixelCanvasState(
         val copy = active.copyLayer()
         layers.add(activeLayerIndex + 1, copy)
         activeLayerIndex++
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -268,6 +406,7 @@ class PixelCanvasState(
         history.pushState(layers, activeLayerIndex, "Delete Layer")
         layers.removeAt(activeLayerIndex)
         activeLayerIndex = activeLayerIndex.coerceIn(0, layers.size - 1)
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
@@ -277,6 +416,7 @@ class PixelCanvasState(
             val item = layers.removeAt(activeLayerIndex)
             layers.add(activeLayerIndex + 1, item)
             activeLayerIndex++
+            recompositeAll()
             hasUnsavedChanges = true
         }
     }
@@ -287,6 +427,7 @@ class PixelCanvasState(
             val item = layers.removeAt(activeLayerIndex)
             layers.add(activeLayerIndex - 1, item)
             activeLayerIndex--
+            recompositeAll()
             hasUnsavedChanges = true
         }
     }
@@ -297,7 +438,6 @@ class PixelCanvasState(
         val upperLayer = layers[activeLayerIndex]
         val lowerLayer = layers[activeLayerIndex - 1]
 
-        // Alpha blend upper layer into lower layer
         for (i in lowerLayer.pixels.indices) {
             val upperColor = upperLayer.pixels[i]
             val upperA = (upperColor ushr 24) and 0xFF
@@ -307,12 +447,14 @@ class PixelCanvasState(
         }
         layers.removeAt(activeLayerIndex)
         activeLayerIndex--
+        recompositeAll()
         hasUnsavedChanges = true
     }
 
     fun setLayerVisibility(index: Int, isVisible: Boolean) {
         if (index in layers.indices) {
             layers[index] = layers[index].copy(isVisible = isVisible)
+            recompositeAll()
             hasUnsavedChanges = true
         }
     }
@@ -320,6 +462,7 @@ class PixelCanvasState(
     fun setLayerOpacity(index: Int, opacity: Float) {
         if (index in layers.indices) {
             layers[index] = layers[index].copy(opacity = opacity)
+            recompositeAll()
             hasUnsavedChanges = true
         }
     }

@@ -71,7 +71,8 @@ import java.util.Locale
 @Composable
 fun SettingsScreen(
     preferences: LocalPreferences,
-    repository: ProjectRepository
+    repository: ProjectRepository,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -91,7 +92,7 @@ fun SettingsScreen(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())

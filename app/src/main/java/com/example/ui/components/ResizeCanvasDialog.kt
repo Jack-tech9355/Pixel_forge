@@ -110,6 +110,7 @@ fun ResizeCanvasDialog(
                             width = targetW,
                             height = targetH
                         )
+                        state.recompositeAll()
                         state.hasUnsavedChanges = true
                     }
                     onDismiss()

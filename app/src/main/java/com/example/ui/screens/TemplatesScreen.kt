@@ -57,7 +57,8 @@ import com.example.ui.theme.ForgeSurfaceElevated
 
 @Composable
 fun TemplatesScreen(
-    onSelectTemplate: (TemplateItem) -> Unit
+    onSelectTemplate: (TemplateItem) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val allTemplates = BuiltInTemplates.ALL
     val categories = listOf("All") + allTemplates.map { it.category }.distinct()
@@ -69,7 +70,7 @@ fun TemplatesScreen(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
