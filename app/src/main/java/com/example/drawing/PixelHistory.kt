@@ -4,12 +4,15 @@ import com.example.model.PixelLayer
 
 /**
  * Stores canvas layer snapshots for fast, robust undo/redo.
+ * Supports dimension tracking to prevent buffer mismatch during resize undo.
  */
-class PixelHistory(private val maxSteps: Int = 30) {
+class PixelHistory(private val maxSteps: Int = 40) {
 
     data class HistorySnapshot(
         val layers: List<PixelLayer>,
         val activeLayerIndex: Int,
+        val width: Int,
+        val height: Int,
         val description: String = ""
     )
 
@@ -26,12 +29,18 @@ class PixelHistory(private val maxSteps: Int = 30) {
      * Saves current state onto undo stack before a mutation is applied.
      * Clears redo stack since a new action branch is started.
      */
-    fun pushState(layers: List<PixelLayer>, activeLayerIndex: Int, description: String = "") {
+    fun pushState(
+        layers: List<PixelLayer>,
+        activeLayerIndex: Int,
+        width: Int,
+        height: Int,
+        description: String = ""
+    ) {
         val snapshotLayers = layers.map { it.snapshot() }
         if (undoStack.size >= maxSteps) {
             undoStack.removeLast()
         }
-        undoStack.push(HistorySnapshot(snapshotLayers, activeLayerIndex, description))
+        undoStack.push(HistorySnapshot(snapshotLayers, activeLayerIndex, width, height, description))
         redoStack.clear()
     }
 
@@ -40,12 +49,16 @@ class PixelHistory(private val maxSteps: Int = 30) {
      */
     fun undo(
         currentLayers: List<PixelLayer>,
-        currentActiveIndex: Int
+        currentActiveIndex: Int,
+        currentWidth: Int,
+        currentHeight: Int
     ): HistorySnapshot? {
         if (undoStack.isEmpty()) return null
         val currentSnapshot = HistorySnapshot(
             currentLayers.map { it.snapshot() },
             currentActiveIndex,
+            currentWidth,
+            currentHeight,
             "Current before undo"
         )
         redoStack.push(currentSnapshot)
@@ -57,12 +70,16 @@ class PixelHistory(private val maxSteps: Int = 30) {
      */
     fun redo(
         currentLayers: List<PixelLayer>,
-        currentActiveIndex: Int
+        currentActiveIndex: Int,
+        currentWidth: Int,
+        currentHeight: Int
     ): HistorySnapshot? {
         if (redoStack.isEmpty()) return null
         val currentSnapshot = HistorySnapshot(
             currentLayers.map { it.snapshot() },
             currentActiveIndex,
+            currentWidth,
+            currentHeight,
             "Current before redo"
         )
         undoStack.push(currentSnapshot)

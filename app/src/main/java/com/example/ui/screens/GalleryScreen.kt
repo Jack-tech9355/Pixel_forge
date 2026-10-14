@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,12 +27,16 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
@@ -35,6 +44,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
@@ -49,6 +60,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -65,11 +78,14 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.ProjectEntity
 import com.example.data.repository.ProjectRepository
 import com.example.export.PngExporter
+import com.example.ui.components.SpriteSheetDialog
 import com.example.ui.theme.ForgeCyan
 import com.example.ui.theme.ForgePurple
 import com.example.ui.theme.ForgeSurface
 import com.example.ui.theme.ForgeSurfaceElevated
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -92,6 +108,11 @@ fun GalleryScreen(
     var projectToDelete by remember { mutableStateOf<ProjectEntity?>(null) }
     var projectToRename by remember { mutableStateOf<ProjectEntity?>(null) }
 
+    // Multi-project selection for Sprite Sheet export
+    var isSelectionMode by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateListOf<String>() }
+    var multiSpriteSheetBitmaps by remember { mutableStateOf<List<Bitmap>?>(null) }
+
     val filteredProjects = remember(allProjects, searchQuery, sortDescending, sortByTitle) {
         allProjects
             .filter { it.title.contains(searchQuery, ignoreCase = true) }
@@ -108,14 +129,17 @@ fun GalleryScreen(
 
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onCreateNewClick,
-                containerColor = ForgePurple,
-                contentColor = Color.White,
-                modifier = Modifier.testTag("gallery_fab_create")
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create Artwork")
+            if (!isSelectionMode) {
+                FloatingActionButton(
+                    onClick = onCreateNewClick,
+                    containerColor = ForgePurple,
+                    contentColor = Color.White,
+                    modifier = Modifier.testTag("gallery_fab_create")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Create Artwork")
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -132,22 +156,90 @@ fun GalleryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "My Gallery",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Black,
-                    color = ForgeCyan
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                        sortByTitle = !sortByTitle
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Sort,
-                            contentDescription = "Sort",
-                            tint = if (sortByTitle) ForgeCyan else Color.LightGray
+                if (isSelectionMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            isSelectionMode = false
+                            selectedIds.clear()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel", tint = Color.LightGray)
+                        }
+                        Text(
+                            text = "${selectedIds.size} Selected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ForgeCyan
                         )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            if (selectedIds.size == filteredProjects.size) {
+                                selectedIds.clear()
+                            } else {
+                                selectedIds.clear()
+                                selectedIds.addAll(filteredProjects.map { it.id })
+                            }
+                        }) {
+                            Icon(Icons.Default.SelectAll, contentDescription = "Select All", tint = Color.White)
+                        }
+
+                        Button(
+                            onClick = {
+                                coroutineScope.launch {
+                                    val bitmaps = withContext(Dispatchers.IO) {
+                                        selectedIds.mapNotNull { id ->
+                                            repository.getProject(id)?.let { proj ->
+                                                PngExporter.compositeToBitmap(proj, true)
+                                            }
+                                        }
+                                    }
+                                    if (bitmaps.isNotEmpty()) {
+                                        multiSpriteSheetBitmaps = bitmaps
+                                    } else {
+                                        Toast.makeText(context, "Select at least 1 project", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            enabled = selectedIds.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = ForgeCyan),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.GridOn, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Sprite Sheet", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "My Gallery",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Black,
+                        color = ForgeCyan
+                    )
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { isSelectionMode = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GridOn,
+                                contentDescription = "Multi Sprite Sheet",
+                                tint = ForgeCyan
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { sortByTitle = !sortByTitle },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sort,
+                                contentDescription = "Sort",
+                                tint = if (sortByTitle) ForgeCyan else Color.LightGray
+                            )
+                        }
                     }
                 }
             }
@@ -215,9 +307,23 @@ fun GalleryScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(filteredProjects, key = { it.id }) { project ->
+                        val isChecked = selectedIds.contains(project.id)
                         GalleryItemCard(
                             project = project,
-                            onOpen = { onOpenProject(project.id) },
+                            isSelectionMode = isSelectionMode,
+                            isChecked = isChecked,
+                            onToggleCheck = {
+                                if (isChecked) selectedIds.remove(project.id)
+                                else selectedIds.add(project.id)
+                            },
+                            onOpen = {
+                                if (isSelectionMode) {
+                                    if (isChecked) selectedIds.remove(project.id)
+                                    else selectedIds.add(project.id)
+                                } else {
+                                    onOpenProject(project.id)
+                                }
+                            },
                             onRename = { projectToRename = project },
                             onDuplicate = {
                                 coroutineScope.launch {
@@ -240,6 +346,19 @@ fun GalleryScreen(
                 }
             }
         }
+    }
+
+    // Multi-project Sprite Sheet Dialog
+    multiSpriteSheetBitmaps?.let { bitmaps ->
+        SpriteSheetDialog(
+            customBitmaps = bitmaps,
+            customTitle = "PixelForge_MultiSpriteSheet",
+            onDismiss = {
+                multiSpriteSheetBitmaps = null
+                isSelectionMode = false
+                selectedIds.clear()
+            }
+        )
     }
 
     // Delete Confirmation
@@ -308,6 +427,9 @@ fun GalleryScreen(
 @Composable
 private fun GalleryItemCard(
     project: ProjectEntity,
+    isSelectionMode: Boolean = false,
+    isChecked: Boolean = false,
+    onToggleCheck: () -> Unit = {},
     onOpen: () -> Unit,
     onRename: () -> Unit,
     onDuplicate: () -> Unit,
@@ -323,16 +445,32 @@ private fun GalleryItemCard(
             .clickable { onOpen() }
             .testTag("gallery_card_${project.id}"),
         colors = CardDefaults.cardColors(containerColor = ForgeSurface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263352))
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isChecked) 2.dp else 1.dp,
+            color = if (isChecked) ForgeCyan else Color(0xFF263352)
+        )
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
-            // Thumbnail
-            ArtworkThumbnailBox(
-                thumbnailBase64 = project.thumbnailBase64,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(120.dp)
-            )
+            ) {
+                // Thumbnail
+                ArtworkThumbnailBox(
+                    thumbnailBase64 = project.thumbnailBase64,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isChecked,
+                        onCheckedChange = { onToggleCheck() },
+                        colors = CheckboxDefaults.colors(checkedColor = ForgeCyan),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -358,64 +496,66 @@ private fun GalleryItemCard(
                     )
                 }
 
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                if (!isSelectionMode) {
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Options",
+                                tint = Color.LightGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
 
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        modifier = Modifier.background(ForgeSurfaceElevated)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Open in Editor", color = Color.White) },
-                            onClick = {
-                                menuExpanded = false
-                                onOpen()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = ForgeCyan) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Share PNG", color = Color.White) },
-                            onClick = {
-                                menuExpanded = false
-                                onShare()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = ForgeCyan) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Rename", color = Color.White) },
-                            onClick = {
-                                menuExpanded = false
-                                onRename()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.LightGray) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Duplicate", color = Color.White) },
-                            onClick = {
-                                menuExpanded = false
-                                onDuplicate()
-                            },
-                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.LightGray) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete", color = Color(0xFFF87171)) },
-                            onClick = {
-                                menuExpanded = false
-                                onDelete()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171)) }
-                        )
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                            modifier = Modifier.background(ForgeSurfaceElevated)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Open in Editor", color = Color.White) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onOpen()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = ForgeCyan) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share PNG", color = Color.White) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onShare()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = ForgeCyan) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Rename", color = Color.White) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRename()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.LightGray) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Duplicate", color = Color.White) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDuplicate()
+                                },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.LightGray) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = Color(0xFFF87171)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDelete()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFF87171)) }
+                            )
+                        }
                     }
                 }
             }
@@ -430,3 +570,4 @@ private fun GalleryItemCard(
         }
     }
 }
+

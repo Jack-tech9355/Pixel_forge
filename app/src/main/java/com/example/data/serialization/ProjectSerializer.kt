@@ -1,5 +1,6 @@
 package com.example.data.serialization
 
+import com.example.model.AnimationFrame
 import com.example.model.PixelLayer
 import com.example.model.PixelProject
 import org.json.JSONArray
@@ -8,7 +9,7 @@ import java.io.File
 
 object ProjectSerializer {
 
-    const val CURRENT_FORMAT_VERSION = 1
+    const val CURRENT_FORMAT_VERSION = 2
 
     fun toJson(project: PixelProject): String {
         val root = JSONObject()
@@ -25,8 +26,27 @@ object ProjectSerializer {
             root.put("backgroundColor", project.backgroundColor!!)
         }
 
+        // Active layers
+        val layersArray = serializeLayers(project.layers)
+        root.put("layers", layersArray)
+
+        // Animation frames
+        val framesArray = JSONArray()
+        for (frame in project.frames) {
+            val frameObj = JSONObject()
+            frameObj.put("id", frame.id)
+            frameObj.put("durationMs", frame.durationMs)
+            frameObj.put("layers", serializeLayers(frame.layers))
+            framesArray.put(frameObj)
+        }
+        root.put("frames", framesArray)
+
+        return root.toString(2)
+    }
+
+    private fun serializeLayers(layers: List<PixelLayer>): JSONArray {
         val layersArray = JSONArray()
-        for (layer in project.layers) {
+        for (layer in layers) {
             val layerObj = JSONObject()
             layerObj.put("id", layer.id)
             layerObj.put("name", layer.name)
@@ -40,9 +60,7 @@ object ProjectSerializer {
             layerObj.put("pixels", pixelsArray)
             layersArray.put(layerObj)
         }
-        root.put("layers", layersArray)
-
-        return root.toString(2)
+        return layersArray
     }
 
     fun fromJson(jsonStr: String): PixelProject {
@@ -57,8 +75,51 @@ object ProjectSerializer {
         val paletteId = root.optString("paletteId", "classic_8bit")
         val backgroundColor = if (root.has("backgroundColor")) root.getInt("backgroundColor") else null
 
+        val layers = deserializeLayers(root.optJSONArray("layers"), width, height)
+
+        val frames = mutableListOf<AnimationFrame>()
+        val framesArray = root.optJSONArray("frames")
+        if (framesArray != null && framesArray.length() > 0) {
+            for (f in 0 until framesArray.length()) {
+                val frameObj = framesArray.getJSONObject(f)
+                val frameId = frameObj.optString("id")
+                val durationMs = frameObj.optInt("durationMs", 125)
+                val frameLayers = deserializeLayers(frameObj.optJSONArray("layers"), width, height)
+                frames.add(
+                    AnimationFrame(
+                        id = frameId,
+                        durationMs = durationMs,
+                        layers = frameLayers
+                    )
+                )
+            }
+        } else {
+            // Backward compatibility: create initial frame from active layers
+            frames.add(
+                AnimationFrame(
+                    durationMs = 125,
+                    layers = layers.map { it.snapshot() }.toMutableList()
+                )
+            )
+        }
+
+        return PixelProject(
+            id = id,
+            title = title,
+            width = width,
+            height = height,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            layers = layers,
+            selectedColor = selectedColor,
+            paletteId = paletteId,
+            backgroundColor = backgroundColor,
+            frames = frames
+        )
+    }
+
+    private fun deserializeLayers(layersArray: JSONArray?, width: Int, height: Int): MutableList<PixelLayer> {
         val layers = mutableListOf<PixelLayer>()
-        val layersArray = root.optJSONArray("layers")
         if (layersArray != null) {
             for (i in 0 until layersArray.length()) {
                 val layerObj = layersArray.getJSONObject(i)
@@ -86,23 +147,10 @@ object ProjectSerializer {
                 )
             }
         }
-
         if (layers.isEmpty()) {
             layers.add(PixelLayer(name = "Layer 1", pixels = IntArray(width * height)))
         }
-
-        return PixelProject(
-            id = id,
-            title = title,
-            width = width,
-            height = height,
-            createdAt = createdAt,
-            updatedAt = updatedAt,
-            layers = layers,
-            selectedColor = selectedColor,
-            paletteId = paletteId,
-            backgroundColor = backgroundColor
-        )
+        return layers
     }
 
     /**
@@ -120,7 +168,6 @@ object ProjectSerializer {
             if (tempFile.renameTo(targetFile)) {
                 true
             } else {
-                // Fallback for systems where renameTo fails
                 tempFile.copyTo(targetFile, overwrite = true)
                 tempFile.delete()
                 true

@@ -1,33 +1,82 @@
 package com.example.ui.components
 
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Shader
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import com.example.drawing.BresenhamAlgorithms
 import com.example.drawing.PixelCanvasState
+import com.example.export.PngExporter
 import com.example.model.DrawingTool
+import com.example.model.SymmetryMode
 
 @Composable
 fun PixelCanvasView(
     state: PixelCanvasState,
     modifier: Modifier = Modifier
 ) {
+    // Cached 1-draw-call checkerboard paint with repeating shader
+    val checkerboardPaint = remember {
+        val tile = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        val light = 0xFF28354E.toInt()
+        val dark = 0xFF1B2337.toInt()
+        for (y in 0 until 16) {
+            for (x in 0 until 16) {
+                val isLight = ((x / 8) + (y / 8)) % 2 == 0
+                tile.setPixel(x, y, if (isLight) light else dark)
+            }
+        }
+        val shader = BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+        Paint().apply {
+            this.shader = shader
+            isAntiAlias = false
+            isDither = false
+        }
+    }
+
+    // Nearest-neighbor hardware bitmap paint
+    val bitmapPaint = remember {
+        Paint().apply {
+            isFilterBitmap = false
+            isDither = false
+            isAntiAlias = false
+        }
+    }
+
+    // Reference overlay paint
+    val refPaint = remember {
+        Paint().apply {
+            isFilterBitmap = true
+            isAntiAlias = true
+        }
+    }
+
+    val srcRect = remember { Rect() }
+    val dstRectF = remember { RectF() }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -44,11 +93,12 @@ fun PixelCanvasView(
         val baseCanvasDisplayWidth: Float
         val baseCanvasDisplayHeight: Float
 
+        val viewportScale = if (state.isTilemapMode) 0.30f else 0.88f
         if (containerAspect > canvasAspect) {
-            baseCanvasDisplayHeight = containerHeight * 0.88f
+            baseCanvasDisplayHeight = containerHeight * viewportScale
             baseCanvasDisplayWidth = baseCanvasDisplayHeight * canvasAspect
         } else {
-            baseCanvasDisplayWidth = containerWidth * 0.88f
+            baseCanvasDisplayWidth = containerWidth * viewportScale
             baseCanvasDisplayHeight = baseCanvasDisplayWidth / canvasAspect
         }
 
@@ -58,29 +108,36 @@ fun PixelCanvasView(
                 .pointerInput(state.activeTool) {
                     if (state.activeTool == DrawingTool.MOVE) {
                         detectTransformGestures { _, pan, zoomDelta, _ ->
-                            state.zoom = (state.zoom * zoomDelta).coerceIn(0.5f, 32f)
+                            state.zoom = (state.zoom * zoomDelta).coerceIn(0.2f, 32f)
                             state.panOffset += pan
                         }
                     } else {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                val gridPoint = screenToGrid(
-                                    screenOffset = offset,
-                                    containerWidth = containerWidth,
-                                    containerHeight = containerHeight,
-                                    canvasDisplayWidth = baseCanvasDisplayWidth * state.zoom,
-                                    canvasDisplayHeight = baseCanvasDisplayHeight * state.zoom,
-                                    panOffset = state.panOffset,
-                                    gridWidth = state.width,
-                                    gridHeight = state.height
-                                )
-                                if (gridPoint != null) {
-                                    state.onTouchDown(gridPoint.x, gridPoint.y)
+                        // High-performance direct gesture loop without touch slop delay
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val downGrid = screenToGrid(
+                                screenOffset = down.position,
+                                containerWidth = containerWidth,
+                                containerHeight = containerHeight,
+                                canvasDisplayWidth = baseCanvasDisplayWidth * state.zoom,
+                                canvasDisplayHeight = baseCanvasDisplayHeight * state.zoom,
+                                panOffset = state.panOffset,
+                                gridWidth = state.width,
+                                gridHeight = state.height
+                            )
+                            if (downGrid != null) {
+                                state.onTouchDown(downGrid.x, downGrid.y)
+                            }
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                if (!change.pressed) {
+                                    state.onTouchUp()
+                                    break
                                 }
-                            },
-                            onDrag = { change, _ ->
                                 change.consume()
-                                val gridPoint = screenToGrid(
+                                val moveGrid = screenToGrid(
                                     screenOffset = change.position,
                                     containerWidth = containerWidth,
                                     containerHeight = containerHeight,
@@ -90,21 +147,15 @@ fun PixelCanvasView(
                                     gridWidth = state.width,
                                     gridHeight = state.height
                                 )
-                                if (gridPoint != null) {
-                                    state.onTouchMove(gridPoint.x, gridPoint.y)
+                                if (moveGrid != null) {
+                                    state.onTouchMove(moveGrid.x, moveGrid.y)
                                 }
-                            },
-                            onDragEnd = {
-                                state.onTouchUp()
-                            },
-                            onDragCancel = {
-                                state.onTouchUp()
                             }
-                        )
+                        }
                     }
                 }
         ) {
-            // Read version counter to trigger canvas redraw phase only (hardware accelerated, zero GC)
+            @Suppress("UNUSED_VARIABLE")
             val version = state.renderVersion
 
             val currentDisplayW = baseCanvasDisplayWidth * state.zoom
@@ -113,35 +164,167 @@ fun PixelCanvasView(
             val canvasLeft = (containerWidth - currentDisplayW) / 2f + state.panOffset.x
             val canvasTop = (containerHeight - currentDisplayH) / 2f + state.panOffset.y
 
-            // 1. Draw Checkerboard background for transparent areas
-            drawCheckerboard(
-                topLeft = Offset(canvasLeft, canvasTop),
-                size = Size(currentDisplayW, currentDisplayH),
-                gridCols = state.width,
-                gridRows = state.height
-            )
+            // Feature I: Tilemap 3x3 Seamless Repeating Mode
+            if (state.isTilemapMode) {
+                for (dy in -1..1) {
+                    for (dx in -1..1) {
+                        val tileLeft = canvasLeft + dx * currentDisplayW
+                        val tileTop = canvasTop + dy * currentDisplayH
 
-            // 2. Draw cached hardware render bitmap with crisp nearest-neighbor FilterQuality.None
-            drawImage(
-                image = state.renderBitmap.asImageBitmap(),
-                dstOffset = IntOffset(canvasLeft.toInt(), canvasTop.toInt()),
-                dstSize = IntSize(currentDisplayW.toInt(), currentDisplayH.toInt()),
-                filterQuality = FilterQuality.None
-            )
+                        drawIntoCanvas { canvas ->
+                            canvas.nativeCanvas.drawRect(
+                                tileLeft,
+                                tileTop,
+                                tileLeft + currentDisplayW,
+                                tileTop + currentDisplayH,
+                                checkerboardPaint
+                            )
+                            srcRect.set(0, 0, state.width, state.height)
+                            dstRectF.set(tileLeft, tileTop, tileLeft + currentDisplayW, tileTop + currentDisplayH)
+                            canvas.nativeCanvas.drawBitmap(state.renderBitmap, srcRect, dstRectF, bitmapPaint)
+                        }
 
-            // 3. Draw in-progress live shape preview without altering underlying pixels
+                        // Boundary for neighbor tiles
+                        if (dx != 0 || dy != 0) {
+                            drawRect(
+                                color = Color.White.copy(alpha = 0.1f),
+                                topLeft = Offset(tileLeft, tileTop),
+                                size = Size(currentDisplayW, currentDisplayH),
+                                style = Stroke(width = 1f)
+                            )
+                        }
+                    }
+                }
+            } else {
+                // 1. Single GPU call checkerboard background
+                drawIntoCanvas { canvas ->
+                    canvas.nativeCanvas.drawRect(
+                        canvasLeft,
+                        canvasTop,
+                        canvasLeft + currentDisplayW,
+                        canvasTop + currentDisplayH,
+                        checkerboardPaint
+                    )
+
+                    // Feature H: Onion Skinning (Previous Frame in faint cyan, Next Frame in faint orange)
+                    if (state.isOnionSkinEnabled && state.frames.size > 1) {
+                        // Previous frame
+                        if (state.currentFrameIndex > 0) {
+                            val prevFrame = state.frames[state.currentFrameIndex - 1]
+                            val prevProj = state.project.copy(layers = prevFrame.layers)
+                            val prevBitmap = PngExporter.compositeToBitmap(prevProj, false)
+                            val prevPaint = Paint().apply {
+                                alpha = (state.onionSkinOpacity * 255).toInt().coerceIn(0, 255)
+                                isFilterBitmap = false
+                            }
+                            srcRect.set(0, 0, prevBitmap.width, prevBitmap.height)
+                            dstRectF.set(canvasLeft, canvasTop, canvasLeft + currentDisplayW, canvasTop + currentDisplayH)
+                            canvas.nativeCanvas.drawBitmap(prevBitmap, srcRect, dstRectF, prevPaint)
+                        }
+
+                        // Next frame
+                        if (state.currentFrameIndex < state.frames.size - 1) {
+                            val nextFrame = state.frames[state.currentFrameIndex + 1]
+                            val nextProj = state.project.copy(layers = nextFrame.layers)
+                            val nextBitmap = PngExporter.compositeToBitmap(nextProj, false)
+                            val nextPaint = Paint().apply {
+                                alpha = (state.onionSkinOpacity * 255).toInt().coerceIn(0, 255)
+                                isFilterBitmap = false
+                            }
+                            srcRect.set(0, 0, nextBitmap.width, nextBitmap.height)
+                            dstRectF.set(canvasLeft, canvasTop, canvasLeft + currentDisplayW, canvasTop + currentDisplayH)
+                            canvas.nativeCanvas.drawBitmap(nextBitmap, srcRect, dstRectF, nextPaint)
+                        }
+                    }
+
+                    // 2. Direct hardware blit with nearest-neighbor sampling
+                    srcRect.set(0, 0, state.width, state.height)
+                    dstRectF.set(
+                        canvasLeft,
+                        canvasTop,
+                        canvasLeft + currentDisplayW,
+                        canvasTop + currentDisplayH
+                    )
+                    canvas.nativeCanvas.drawBitmap(state.renderBitmap, srcRect, dstRectF, bitmapPaint)
+
+                    // Feature F: Non-destructive Reference Image Overlay
+                    if (state.isReferenceVisible && state.referenceBitmap != null) {
+                        val refBmp = state.referenceBitmap!!
+                        refPaint.alpha = (state.referenceOpacity * 255).toInt().coerceIn(0, 255)
+                        val refW = currentDisplayW * state.referenceScale
+                        val refH = currentDisplayH * state.referenceScale
+                        val refLeft = canvasLeft + state.referenceOffset.x
+                        val refTop = canvasTop + state.referenceOffset.y
+
+                        srcRect.set(0, 0, refBmp.width, refBmp.height)
+                        dstRectF.set(refLeft, refTop, refLeft + refW, refTop + refH)
+                        canvas.nativeCanvas.drawBitmap(refBmp, srcRect, dstRectF, refPaint)
+                    }
+                }
+            }
+
+            val pixelSizeX = currentDisplayW / state.width
+            val pixelSizeY = currentDisplayH / state.height
+
+            // 3. Draw in-progress live shape preview (including Rect selection box)
             if (state.isDrawingShape && state.shapeStartPoint != null && state.shapeCurrentPoint != null) {
-                drawShapePreview(
-                    state = state,
-                    canvasLeft = canvasLeft,
-                    canvasTop = canvasTop,
-                    pixelSizeX = currentDisplayW / state.width,
-                    pixelSizeY = currentDisplayH / state.height
+                if (state.activeTool == DrawingTool.RECT_SELECT) {
+                    val s = state.shapeStartPoint!!
+                    val e = state.shapeCurrentPoint!!
+                    val minX = minOf(s.x, e.x)
+                    val maxX = maxOf(s.x, e.x)
+                    val minY = minOf(s.y, e.y)
+                    val maxY = maxOf(s.y, e.y)
+
+                    drawRect(
+                        color = Color(0xFF38BDF8),
+                        topLeft = Offset(canvasLeft + minX * pixelSizeX, canvasTop + minY * pixelSizeY),
+                        size = Size((maxX - minX + 1) * pixelSizeX, (maxY - minY + 1) * pixelSizeY),
+                        style = Stroke(width = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f))
+                    )
+                } else {
+                    drawShapePreview(
+                        state = state,
+                        canvasLeft = canvasLeft,
+                        canvasTop = canvasTop,
+                        pixelSizeX = pixelSizeX,
+                        pixelSizeY = pixelSizeY
+                    )
+                }
+            }
+
+            // Feature B: Lasso points live path
+            if (state.activeTool == DrawingTool.LASSO_SELECT && state.lassoPoints.size > 1) {
+                for (i in 0 until state.lassoPoints.size - 1) {
+                    val p1 = state.lassoPoints[i]
+                    val p2 = state.lassoPoints[i + 1]
+                    drawLine(
+                        color = Color(0xFF38BDF8),
+                        start = Offset(canvasLeft + (p1.x + 0.5f) * pixelSizeX, canvasTop + (p1.y + 0.5f) * pixelSizeY),
+                        end = Offset(canvasLeft + (p2.x + 0.5f) * pixelSizeX, canvasTop + (p2.y + 0.5f) * pixelSizeY),
+                        strokeWidth = 2f
+                    )
+                }
+            }
+
+            // Feature B: Render active selection borders / floating bounding box
+            if (state.selection.hasActiveMask) {
+                val b = state.selection.bounds
+                val selLeft = canvasLeft + b.left * pixelSizeX
+                val selTop = canvasTop + b.top * pixelSizeY
+                val selW = b.width() * pixelSizeX
+                val selH = b.height() * pixelSizeY
+
+                drawRect(
+                    color = Color(0xFFFACC15),
+                    topLeft = Offset(selLeft, selTop),
+                    size = Size(selW, selH),
+                    style = Stroke(width = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f))
                 )
             }
 
-            // 4. Draw pixel grid lines when enabled
-            if (state.isGridVisible && currentDisplayW >= 120f) {
+            // 4. Pixel grid lines
+            if (state.isGridVisible && pixelSizeX >= 6f) {
                 drawGridLines(
                     topLeft = Offset(canvasLeft, canvasTop),
                     width = currentDisplayW,
@@ -151,12 +334,39 @@ fun PixelCanvasView(
                 )
             }
 
-            // 5. Crisp neon outline around artwork canvas
+            // Feature A: Symmetry Axis Indicators
+            if (state.symmetryMode != SymmetryMode.NONE) {
+                val dash = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+                val axisColor = Color(0xFF22D3EE).copy(alpha = 0.85f)
+
+                if (state.symmetryMode == SymmetryMode.HORIZONTAL || state.symmetryMode == SymmetryMode.QUAD) {
+                    val midX = canvasLeft + currentDisplayW / 2f
+                    drawLine(
+                        color = axisColor,
+                        start = Offset(midX, canvasTop - 8f),
+                        end = Offset(midX, canvasTop + currentDisplayH + 8f),
+                        strokeWidth = 2f,
+                        pathEffect = dash
+                    )
+                }
+                if (state.symmetryMode == SymmetryMode.VERTICAL || state.symmetryMode == SymmetryMode.QUAD) {
+                    val midY = canvasTop + currentDisplayH / 2f
+                    drawLine(
+                        color = axisColor,
+                        start = Offset(canvasLeft - 8f, midY),
+                        end = Offset(canvasLeft + currentDisplayW + 8f, midY),
+                        strokeWidth = 2f,
+                        pathEffect = dash
+                    )
+                }
+            }
+
+            // 5. Crisp neon outline around main artwork canvas
             drawRect(
-                color = Color(0xFF8B5CF6).copy(alpha = 0.6f),
+                color = if (state.isTilemapMode) Color(0xFF22D3EE) else Color(0xFF8B5CF6).copy(alpha = 0.6f),
                 topLeft = Offset(canvasLeft - 1f, canvasTop - 1f),
                 size = Size(currentDisplayW + 2f, currentDisplayH + 2f),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
+                style = Stroke(width = if (state.isTilemapMode) 2.5f else 2f)
             )
         }
     }
@@ -186,29 +396,6 @@ private fun screenToGrid(
     val gridY = (localY / canvasDisplayHeight * gridHeight).toInt().coerceIn(0, gridHeight - 1)
 
     return BresenhamAlgorithms.Point(gridX, gridY)
-}
-
-private fun DrawScope.drawCheckerboard(
-    topLeft: Offset,
-    size: Size,
-    gridCols: Int,
-    gridRows: Int
-) {
-    val colSize = size.width / gridCols
-    val rowSize = size.height / gridRows
-    val lightCheck = Color(0xFF28354E)
-    val darkCheck = Color(0xFF1B2337)
-
-    for (r in 0 until gridRows) {
-        for (c in 0 until gridCols) {
-            val color = if ((r + c) % 2 == 0) lightCheck else darkCheck
-            drawRect(
-                color = color,
-                topLeft = Offset(topLeft.x + c * colSize, topLeft.y + r * rowSize),
-                size = Size(colSize + 0.5f, rowSize + 0.5f)
-            )
-        }
-    }
 }
 
 private fun DrawScope.drawGridLines(
@@ -264,12 +451,15 @@ private fun DrawScope.drawShapePreview(
 
     val previewColor = Color(state.currentColor).copy(alpha = 0.85f)
     for (pt in previewPoints) {
-        if (pt.x in 0 until state.width && pt.y in 0 until state.height) {
-            drawRect(
-                color = previewColor,
-                topLeft = Offset(canvasLeft + pt.x * pixelSizeX, canvasTop + pt.y * pixelSizeY),
-                size = Size(pixelSizeX, pixelSizeY)
-            )
+        val symmetric = state.getSymmetricPoints(pt.x, pt.y)
+        for (spt in symmetric) {
+            if (spt.x in 0 until state.width && spt.y in 0 until state.height) {
+                drawRect(
+                    color = previewColor,
+                    topLeft = Offset(canvasLeft + spt.x * pixelSizeX, canvasTop + spt.y * pixelSizeY),
+                    size = Size(pixelSizeX, pixelSizeY)
+                )
+            }
         }
     }
 }

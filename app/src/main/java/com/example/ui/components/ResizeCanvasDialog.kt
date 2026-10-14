@@ -81,9 +81,8 @@ fun ResizeCanvasDialog(
                 onClick = {
                     val targetW = (newWText.toIntOrNull() ?: state.width).coerceIn(8, 128)
                     val targetH = (newHText.toIntOrNull() ?: state.height).coerceIn(8, 128)
-
                     if (targetW != state.width || targetH != state.height) {
-                        state.history.pushState(state.layers, state.activeLayerIndex, "Resize Canvas")
+                        state.history.pushState(state.layers, state.activeLayerIndex, state.width, state.height, "Resize Canvas")
                         val oldW = state.width
                         val oldH = state.height
 

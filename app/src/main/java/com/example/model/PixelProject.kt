@@ -13,7 +13,8 @@ data class PixelProject(
     var selectedColor: Int = 0xFF8B5CF6.toInt(),
     var paletteId: String = "classic_8bit",
     var backgroundColor: Int? = null,
-    var previewBase64: String? = null
+    var previewBase64: String? = null,
+    var frames: MutableList<AnimationFrame> = mutableListOf()
 ) {
     companion object {
         fun createEmpty(
@@ -27,12 +28,17 @@ data class PixelProject(
                 name = "Layer 1",
                 pixels = basePixels
             )
+            val firstFrame = AnimationFrame(
+                durationMs = 125,
+                layers = mutableListOf(firstLayer.snapshot())
+            )
             return PixelProject(
                 title = title,
                 width = width,
                 height = height,
                 layers = mutableListOf(firstLayer),
-                backgroundColor = backgroundColor
+                backgroundColor = backgroundColor,
+                frames = mutableListOf(firstFrame)
             )
         }
     }

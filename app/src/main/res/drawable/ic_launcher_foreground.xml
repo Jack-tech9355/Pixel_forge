@@ -1,59 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-
-    <!-- Ambient Neon Pixel Glow -->
-    <path
-        android:fillColor="#338B5CF6"
-        android:pathData="M48,22h14v14h-14z M58,32h14v14h-14z M68,42h14v14h-14z M76,50h14v14h-14z" />
-    <path
-        android:fillColor="#3322D3EE"
-        android:pathData="M26,62h14v14h-14z M36,52h14v14h-14z" />
-
-    <!-- Sharp Pixel Blade - Electric Cyan Edge & White Shine -->
-    <!-- Blade Tip & Spine -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M72,26h6v6h-6z M66,32h6v6h-6z M60,38h6v6h-6z M54,44h6v6h-6z M48,50h6v6h-6z" />
-
-    <!-- Cyan Energy Aura -->
-    <path
-        android:fillColor="#22D3EE"
-        android:pathData="M78,26h6v6h-6z M72,32h6v6h-6z M66,38h6v6h-6z M60,44h6v6h-6z M54,50h6v6h-6z M66,26h6v6h-6z M60,32h6v6h-6z M54,38h6v6h-6z M48,44h6v6h-6z M42,50h6v6h-6z" />
-
-    <!-- Deep Purple Blade Body -->
-    <path
-        android:fillColor="#8B5CF6"
-        android:pathData="M60,26h6v6h-6z M54,32h6v6h-6z M48,38h6v6h-6z M42,44h6v6h-6z M36,50h6v6h-6z M36,56h6v6h-6z M42,56h6v6h-6z" />
-
-    <!-- Golden Crossguard -->
-    <path
-        android:fillColor="#FBBF24"
-        android:pathData="M30,50h8v8h-8z M44,64h8v8h-8z M36,58h8v8h-8z M26,44h6v6h-6z M50,68h6v6h-6z" />
-    <path
-        android:fillColor="#D97706"
-        android:pathData="M32,52h4v4h-4z M46,66h4v4h-4z" />
-
-    <!-- Grip & Pommel -->
-    <path
-        android:fillColor="#A5B4CF"
-        android:pathData="M30,64h6v6h-6z M24,70h6v6h-6z" />
-    <!-- Ruby Pommel Gem -->
-    <path
-        android:fillColor="#F43F5E"
-        android:pathData="M18,76h8v8h-8z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M20,78h2v2h-2z" />
-
-    <!-- Floating Cyan/Purple Magic Pixel Sparks -->
-    <path
-        android:fillColor="#22D3EE"
-        android:pathData="M84,38h4v4h-4z M32,28h4v4h-4z M70,72h4v4h-4z" />
-    <path
-        android:fillColor="#8B5CF6"
-        android:pathData="M68,18h4v4h-4z M22,54h4v4h-4z M52,80h4v4h-4z" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="66dp"
+        android:height="66dp"
+        android:drawable="@drawable/ic_pixelforge_icon"
+        android:gravity="center" />
+</layer-list>

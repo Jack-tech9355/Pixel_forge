@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,7 +62,9 @@ import com.example.data.repository.ProjectRepository
 import com.example.model.PixelLayer
 import com.example.model.PixelProject
 import com.example.model.TemplateItem
+import androidx.compose.material.icons.filled.Explore
 import com.example.ui.components.CreateProjectDialog
+import com.example.ui.screens.CommunityShowcaseScreen
 import com.example.ui.screens.EditorScreen
 import com.example.ui.screens.GalleryScreen
 import com.example.ui.screens.HomeScreen
@@ -80,6 +84,7 @@ enum class AppDestination(val label: String, val icon: ImageVector) {
     HOME("Home", Icons.Default.Home),
     TEMPLATES("Templates", Icons.Default.AutoAwesome),
     GALLERY("Gallery", Icons.Default.Collections),
+    COMMUNITY("Cloud", Icons.Default.Explore),
     SETTINGS("Settings", Icons.Default.Settings)
 }
 
@@ -112,27 +117,27 @@ fun PixelForgeApp() {
 
     PixelForgeTheme(darkTheme = isDarkTheme) {
         Box(modifier = Modifier.fillMaxSize()) {
-            Scaffold(
-                bottomBar = {
-                    // Hide bottom bar when editing to maximize drawing screen area
-                    if (activeProject == null && !isSplashVisible) {
-                        CompactPixelBottomBar(
-                            currentDestination = currentDestination,
-                            onDestinationSelected = { currentDestination = it }
-                        )
+            if (activeProject != null) {
+                EditorScreen(
+                    initialProject = activeProject!!,
+                    repository = repository,
+                    onBackClick = {
+                        activeProject = null
                     }
-                },
-                containerColor = MaterialTheme.colorScheme.background
-            ) { innerPadding ->
-                if (activeProject != null) {
-                    EditorScreen(
-                        initialProject = activeProject!!,
-                        repository = repository,
-                        onBackClick = {
-                            activeProject = null
+                )
+            } else {
+                Scaffold(
+                    bottomBar = {
+                        if (!isSplashVisible) {
+                            CompactPixelBottomBar(
+                                currentDestination = currentDestination,
+                                onDestinationSelected = { currentDestination = it }
+                            )
                         }
-                    )
-                } else {
+                    },
+                    contentWindowInsets = WindowInsets.safeDrawing,
+                    containerColor = MaterialTheme.colorScheme.background
+                ) { innerPadding ->
                     val screenModifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
@@ -193,6 +198,16 @@ fun PixelForgeApp() {
                             )
                         }
 
+                        AppDestination.COMMUNITY -> {
+                            CommunityShowcaseScreen(
+                                repository = repository,
+                                onOpenProject = { proj ->
+                                    activeProject = proj
+                                },
+                                modifier = screenModifier
+                            )
+                        }
+
                         AppDestination.SETTINGS -> {
                             SettingsScreen(
                                 preferences = preferences,
@@ -223,6 +238,7 @@ fun PixelForgeApp() {
                     )
                 }
             }
+        }
 
             // Real Animated Splash Screen
             AnimatedVisibility(
@@ -234,7 +250,6 @@ fun PixelForgeApp() {
             }
         }
     }
-}
 
 /**
  * Compact, sleek, responsive Material 3 bottom navigation bar.
@@ -248,7 +263,7 @@ private fun CompactPixelBottomBar(
 ) {
     Surface(
         color = ForgeSurface,
-        tonalElevation = 8.dp,
+        tonalElevation = 6.dp,
         modifier = Modifier
             .fillMaxWidth()
             .border(
@@ -256,62 +271,68 @@ private fun CompactPixelBottomBar(
                 color = Color(0xFF1E293B)
             )
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .height(60.dp)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            AppDestination.entries.forEach { destination ->
-                val isSelected = currentDestination == destination
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppDestination.entries.forEach { destination ->
+                    val isSelected = currentDestination == destination
 
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onDestinationSelected(destination) }
-                        .padding(vertical = 4.dp)
-                        .testTag("nav_item_${destination.name.lowercase()}"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onDestinationSelected(destination) }
+                            .padding(vertical = 4.dp)
+                            .testTag("nav_item_${destination.name.lowercase()}"),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 44.dp, height = 26.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (isSelected) ForgePurple.copy(alpha = 0.35f) else Color.Transparent
-                                )
-                                .border(
-                                    width = if (isSelected) 1.dp else 0.dp,
-                                    color = if (isSelected) ForgePurple else Color.Transparent,
-                                    shape = RoundedCornerShape(14.dp)
-                                ),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(
-                                imageVector = destination.icon,
-                                contentDescription = destination.label,
-                                tint = if (isSelected) ForgeCyan else Color(0xFFA5B4CF),
-                                modifier = Modifier.size(19.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 44.dp, height = 26.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .background(
+                                        if (isSelected) ForgePurple.copy(alpha = 0.35f) else Color.Transparent
+                                    )
+                                    .border(
+                                        width = if (isSelected) 1.dp else 0.dp,
+                                        color = if (isSelected) ForgePurple else Color.Transparent,
+                                        shape = RoundedCornerShape(13.dp)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = destination.icon,
+                                    contentDescription = destination.label,
+                                    tint = if (isSelected) ForgeCyan else Color(0xFFA5B4CF),
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            Text(
+                                text = destination.label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) ForgeCyan else Color(0xFFA5B4CF),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        Text(
-                            text = destination.label,
-                            fontSize = 10.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) ForgeCyan else Color(0xFFA5B4CF),
-                            maxLines = 1
-                        )
                     }
                 }
             }

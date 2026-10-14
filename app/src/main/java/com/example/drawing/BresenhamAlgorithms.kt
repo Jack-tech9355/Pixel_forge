@@ -1,6 +1,7 @@
 package com.example.drawing
 
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * High-performance, pixel-exact geometry algorithms for pixel art rasterization.
@@ -57,14 +58,12 @@ object BresenhamAlgorithms {
                 }
             }
         } else {
-            // Horizontal edges
             for (x in minX..maxX) {
                 points.add(Point(x, minY))
                 if (minY != maxY) {
                     points.add(Point(x, maxY))
                 }
             }
-            // Vertical edges
             for (y in (minY + 1) until maxY) {
                 points.add(Point(minX, y))
                 if (minX != maxX) {
@@ -101,7 +100,6 @@ object BresenhamAlgorithms {
                 }
             }
         } else {
-            // Bresenham outline for circle
             val pointSet = mutableSetOf<Point>()
             val steps = (maxOf(rx, ry) * 8).toInt().coerceAtLeast(16)
             for (i in 0 until steps) {
@@ -116,8 +114,32 @@ object BresenhamAlgorithms {
     }
 
     /**
+     * Color distance between two ARGB 32-bit colors on a 0..100 scale.
+     */
+    fun colorDistance(c1: Int, c2: Int): Double {
+        val a1 = (c1 ushr 24) and 0xFF
+        val a2 = (c2 ushr 24) and 0xFF
+        if (a1 == 0 && a2 == 0) return 0.0
+        if (a1 == 0 || a2 == 0) return 100.0
+
+        val r1 = (c1 ushr 16) and 0xFF
+        val g1 = (c1 ushr 8) and 0xFF
+        val b1 = c1 and 0xFF
+
+        val r2 = (c2 ushr 16) and 0xFF
+        val g2 = (c2 ushr 8) and 0xFF
+        val b2 = c2 and 0xFF
+
+        val dr = (r1 - r2).toDouble()
+        val dg = (g1 - g2).toDouble()
+        val db = (b1 - b2).toDouble()
+        val da = (a1 - a2).toDouble()
+
+        return sqrt(dr * dr + dg * dg + db * db + da * da) / 510.0 * 100.0
+    }
+
+    /**
      * Stack-based 4-way flood fill.
-     * Prevents StackOverflowError and efficiently fills bounded pixel clusters.
      */
     fun floodFill(
         pixels: IntArray,
@@ -126,16 +148,21 @@ object BresenhamAlgorithms {
         startX: Int,
         startY: Int,
         targetColor: Int,
-        replacementColor: Int
+        replacementColor: Int,
+        tolerance: Int = 0
     ) {
         if (targetColor == replacementColor) return
         if (startX !in 0 until width || startY !in 0 until height) return
 
         val startIndex = startY * width + startX
-        if (pixels[startIndex] != targetColor) return
+        val baseColor = pixels[startIndex]
+        if (tolerance == 0 && baseColor != targetColor) return
+        if (tolerance > 0 && colorDistance(baseColor, targetColor) > tolerance) return
 
+        val visited = BooleanArray(width * height)
         val queue = java.util.ArrayDeque<Point>()
         queue.push(Point(startX, startY))
+        visited[startIndex] = true
         pixels[startIndex] = replacementColor
 
         val dx = intArrayOf(0, 0, -1, 1)
@@ -149,12 +176,105 @@ object BresenhamAlgorithms {
 
                 if (nx in 0 until width && ny in 0 until height) {
                     val nIndex = ny * width + nx
-                    if (pixels[nIndex] == targetColor) {
-                        pixels[nIndex] = replacementColor
-                        queue.push(Point(nx, ny))
+                    if (!visited[nIndex]) {
+                        val pix = pixels[nIndex]
+                        val matches = if (tolerance <= 0) {
+                            pix == targetColor
+                        } else {
+                            colorDistance(pix, targetColor) <= tolerance
+                        }
+                        if (matches) {
+                            visited[nIndex] = true
+                            pixels[nIndex] = replacementColor
+                            queue.push(Point(nx, ny))
+                        }
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Magic Wand connected pixel selection with configurable tolerance.
+     */
+    fun magicWandSelect(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        startX: Int,
+        startY: Int,
+        tolerance: Int
+    ): BooleanArray {
+        val mask = BooleanArray(width * height)
+        if (startX !in 0 until width || startY !in 0 until height) return mask
+
+        val targetColor = pixels[startY * width + startX]
+        val queue = java.util.ArrayDeque<Point>()
+        queue.push(Point(startX, startY))
+        mask[startY * width + startX] = true
+
+        val dx = intArrayOf(0, 0, -1, 1)
+        val dy = intArrayOf(-1, 1, 0, 0)
+
+        while (!queue.isEmpty()) {
+            val pt = queue.pop()
+            for (i in 0..3) {
+                val nx = pt.x + dx[i]
+                val ny = pt.y + dy[i]
+                if (nx in 0 until width && ny in 0 until height) {
+                    val idx = ny * width + nx
+                    if (!mask[idx]) {
+                        val c = pixels[idx]
+                        val diff = if (tolerance <= 0) {
+                            if (c == targetColor) 0.0 else 100.0
+                        } else {
+                            colorDistance(c, targetColor)
+                        }
+                        if (diff <= tolerance) {
+                            mask[idx] = true
+                            queue.push(Point(nx, ny))
+                        }
+                    }
+                }
+            }
+        }
+        return mask
+    }
+
+    /**
+     * Replaces a chosen color with another color across pixels array with optional tolerance.
+     */
+    fun replaceColor(
+        pixels: IntArray,
+        targetColor: Int,
+        newColor: Int,
+        tolerance: Int = 0,
+        preserveAlpha: Boolean = true
+    ): Int {
+        var count = 0
+        val targetA = (targetColor ushr 24) and 0xFF
+        val newR = (newColor ushr 16) and 0xFF
+        val newG = (newColor ushr 8) and 0xFF
+        val newB = newColor and 0xFF
+
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            val diff = if (tolerance <= 0) {
+                if (c == targetColor) 0.0 else 100.0
+            } else {
+                colorDistance(c, targetColor)
+            }
+
+            if (diff <= tolerance) {
+                if (preserveAlpha) {
+                    val srcA = (c ushr 24) and 0xFF
+                    pixels[i] = (srcA shl 24) or (newR shl 16) or (newG shl 8) or newB
+                } else {
+                    pixels[i] = newColor
+                }
+                count++
+            }
+        }
+        return count
     }
 }
